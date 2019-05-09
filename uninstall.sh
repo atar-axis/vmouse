@@ -7,10 +7,10 @@ fi
 
 
 echo "* unloading current driver module"
-modprobe -r hid_pointeremu
+modprobe -r vmouse
 
 echo "  * uninstalling and removing v0.1 from DKMS"
-dkms remove -m hid-pointeremu -v "0.1" --all
+dkms remove -m vmouse -v "0.1" --all
 
 echo "  * removing $instance folder from /usr/src"
-rm --recursive "/usr/src/hid-pointeremu-0.1/"
+rm --recursive "/usr/src/vmouse-0.1/"
