@@ -51,6 +51,14 @@ void vmouse_movement(int x, int value)
 }
 EXPORT_SYMBOL(vmouse_movement);
 
+void vmouse_leftclick(int value)
+{
+	input_report_key(mouse->idev, BTN_LEFT, value);
+	input_sync(mouse->idev);
+}
+EXPORT_SYMBOL(vmouse_leftclick);
+
+
 int init_module(void)
 {
     int retval;
@@ -63,7 +71,7 @@ int init_module(void)
     memset(mouse, 0, sizeof(*mouse));
 
 
-	printk(KERN_ERR "vmouse: hi!\n");
+	printk(KERN_ERR "vmouse: hi there!\n");
 
 	input_dev = input_allocate_device();
 	if (!input_dev) {
@@ -75,7 +83,7 @@ int init_module(void)
 
 	input_dev->name = "Mouse Emulation";
 	input_dev->evbit[0] = BIT_MASK(EV_KEY) | BIT_MASK(EV_REL);
-	input_dev->keybit[0] = BIT_MASK(BTN_LEFT) | BIT_MASK(BTN_RIGHT) | BIT_MASK(BTN_MIDDLE);
+	input_dev->keybit[BIT_WORD(BTN_MOUSE)] = BIT_MASK(BTN_LEFT) | BIT_MASK(BTN_RIGHT) | BIT_MASK(BTN_MIDDLE);
 	input_dev->relbit[0] = BIT_MASK(REL_X) | BIT_MASK(REL_Y) | BIT_MASK(REL_WHEEL);
 
 	input_set_drvdata(input_dev, mouse);
