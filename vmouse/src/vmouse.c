@@ -1,19 +1,3 @@
-/*
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
- */
-
 #ifndef __KERNEL__
 #  define __KERNEL__
 #endif
@@ -28,36 +12,73 @@
 #include <linux/delay.h>
 #include <linux/input.h>
 
-/*
- * Version Information
- */
-#define DRIVER_VERSION "v0.1"
 
 MODULE_AUTHOR("Florian Dollinger");
 MODULE_DESCRIPTION("Mouse Emulation, designed to use in other modules");
 MODULE_LICENSE("GPL");
+MODULE_VERSION("0.1");
+
+
+
+
 
 struct instance_data {
-    struct input_dev *idev;
+    struct input_dev* idev;
+	struct timer_list timer;
+
+	int state_rel_x;
+	int state_rel_y;
+	int state_btn_left;
+	int state_btn_right;
+	int state_btn_middle;
+
+	int registered_clients; // TODO:
 };
 static struct instance_data *mouse;
+// TODO: currently global, not per instance
 
 
 void vmouse_movement(int x, int value)
 {
-	input_report_rel(mouse->idev, (x == 1 ? REL_X : REL_Y), value);
-	input_sync(mouse->idev);
-
+	if (x) {
+		mouse->state_rel_x = value;
+	} else {
+		mouse->state_rel_y = value;
+	}
 }
 EXPORT_SYMBOL(vmouse_movement);
 
 void vmouse_leftclick(int value)
 {
-	input_report_key(mouse->idev, BTN_LEFT, value);
-	input_sync(mouse->idev);
+	mouse->state_btn_left = value;
 }
 EXPORT_SYMBOL(vmouse_leftclick);
 
+void vmouse_rightclick(int value)
+{
+	mouse->state_btn_right = value;
+}
+EXPORT_SYMBOL(vmouse_rightclick);
+
+void vmouse_middleclick(int value)
+{
+	mouse->state_btn_middle = value;
+}
+EXPORT_SYMBOL(vmouse_middleclick);
+
+
+static void send_report(struct timer_list *t) {
+
+	input_report_rel(mouse->idev, REL_X, mouse->state_rel_x);
+	input_report_rel(mouse->idev, REL_Y, mouse->state_rel_y);
+	input_report_key(mouse->idev, BTN_LEFT, mouse->state_btn_left);
+	input_report_key(mouse->idev, BTN_RIGHT, mouse->state_btn_right);
+	input_report_key(mouse->idev, BTN_MIDDLE, mouse->state_btn_middle);
+	input_sync(mouse->idev);
+
+	mod_timer(&mouse->timer, jiffies + msecs_to_jiffies(10));
+
+}
 
 int init_module(void)
 {
@@ -94,6 +115,10 @@ int init_module(void)
 		goto err_free_dev;
 	}
 
+	timer_setup(&mouse->timer, send_report, 0);
+	mod_timer(&mouse->timer, jiffies + msecs_to_jiffies(10));
+
+
 	return 0;
 
 err_free_dev:
@@ -105,6 +130,8 @@ err_free_dev:
 
 void cleanup_module(void)
 {
+	del_timer_sync(&mouse->timer);
+
 	if(!mouse) return;
 
 	input_unregister_device(mouse->idev);
