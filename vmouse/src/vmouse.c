@@ -16,15 +16,14 @@
 MODULE_AUTHOR("Florian Dollinger");
 MODULE_DESCRIPTION("Mouse Emulation, designed to use in other modules");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("0.1");
-
-
-
+MODULE_VERSION("0.2");
 
 
 struct instance_data {
-    struct input_dev* idev;
+	struct input_dev* idev;
 	struct timer_list timer;
+
+	int report_rate_ms;
 
 	int state_rel_x;
 	int state_rel_y;
@@ -32,108 +31,118 @@ struct instance_data {
 	int state_btn_right;
 	int state_btn_middle;
 
-	int registered_clients; // TODO:
+	 // TODO:
+	int registered_clients;
 };
-static struct instance_data *mouse;
+static struct instance_data *vmouse;
 // TODO: currently global, not per instance
 
 
 void vmouse_movement(int x, int value)
 {
 	if (x) {
-		mouse->state_rel_x = value;
+		vmouse->state_rel_x = value;
 	} else {
-		mouse->state_rel_y = value;
+		vmouse->state_rel_y = value;
 	}
 }
 EXPORT_SYMBOL(vmouse_movement);
 
 void vmouse_leftclick(int value)
 {
-	mouse->state_btn_left = value;
+	vmouse->state_btn_left = value;
 }
 EXPORT_SYMBOL(vmouse_leftclick);
 
 void vmouse_rightclick(int value)
 {
-	mouse->state_btn_right = value;
+	vmouse->state_btn_right = value;
 }
 EXPORT_SYMBOL(vmouse_rightclick);
 
 void vmouse_middleclick(int value)
 {
-	mouse->state_btn_middle = value;
+	vmouse->state_btn_middle = value;
 }
 EXPORT_SYMBOL(vmouse_middleclick);
 
 
 static void send_report(struct timer_list *t) {
 
-	input_report_rel(mouse->idev, REL_X, mouse->state_rel_x);
-	input_report_rel(mouse->idev, REL_Y, mouse->state_rel_y);
-	input_report_key(mouse->idev, BTN_LEFT, mouse->state_btn_left);
-	input_report_key(mouse->idev, BTN_RIGHT, mouse->state_btn_right);
-	input_report_key(mouse->idev, BTN_MIDDLE, mouse->state_btn_middle);
-	input_sync(mouse->idev);
+	input_report_rel(vmouse->idev, REL_X, vmouse->state_rel_x);
+	input_report_rel(vmouse->idev, REL_Y, vmouse->state_rel_y);
+	input_report_key(vmouse->idev, BTN_LEFT, vmouse->state_btn_left);
+	input_report_key(vmouse->idev, BTN_RIGHT, vmouse->state_btn_right);
+	input_report_key(vmouse->idev, BTN_MIDDLE, vmouse->state_btn_middle);
+	input_sync(vmouse->idev);
 
-	mod_timer(&mouse->timer, jiffies + msecs_to_jiffies(10));
+	mod_timer(&vmouse->timer, jiffies + msecs_to_jiffies(vmouse->report_rate_ms));
 
 }
 
 int init_module(void)
 {
-    int retval;
-
+	int retval;
 	struct input_dev *input_dev;
-
-    /* allocate and zero a new data structure for the new device */
-    mouse = kmalloc(sizeof(struct instance_data), GFP_KERNEL);
-    if (!mouse) return -ENOMEM; /* failure */
-    memset(mouse, 0, sizeof(*mouse));
-
 
 	printk(KERN_ERR "vmouse: hi there!\n");
 
+	/* allocate the input device */
 	input_dev = input_allocate_device();
 	if (!input_dev) {
 		printk(KERN_ERR "Not enough memory\n");
-		retval = -ENOMEM;
+		return -ENOMEM;
 	}
 
-	mouse->idev = input_dev;
+	/* allocate and zero the vmouse struct and let the device
+	 * subsystem handle the freeing of it
+	 */
+	vmouse = devm_kzalloc(&input_dev->dev, sizeof(*vmouse), GFP_KERNEL);
+	if (!vmouse) {
+		retval = -ENOMEM;
+		goto err_free_dev;
+	}
+	vmouse->idev = input_dev;
 
-	input_dev->name = "Mouse Emulation";
-	input_dev->evbit[0] = BIT_MASK(EV_KEY) | BIT_MASK(EV_REL);
-	input_dev->keybit[BIT_WORD(BTN_MOUSE)] = BIT_MASK(BTN_LEFT) | BIT_MASK(BTN_RIGHT) | BIT_MASK(BTN_MIDDLE);
-	input_dev->relbit[0] = BIT_MASK(REL_X) | BIT_MASK(REL_Y) | BIT_MASK(REL_WHEEL);
+	vmouse->report_rate_ms = 10;
 
-	input_set_drvdata(input_dev, mouse);
+	vmouse->idev->name = "Mouse Emulation";
+	vmouse->idev->evbit[0]
+		= BIT_MASK(EV_KEY)
+		| BIT_MASK(EV_REL);
+	vmouse->idev->keybit[BIT_WORD(BTN_MOUSE)]
+		= BIT_MASK(BTN_LEFT)
+		| BIT_MASK(BTN_RIGHT)
+		| BIT_MASK(BTN_MIDDLE);
+	vmouse->idev->relbit[0]
+		= BIT_MASK(REL_X)
+		| BIT_MASK(REL_Y)
+		| BIT_MASK(REL_WHEEL);
 
-	retval = input_register_device(input_dev);
+	input_set_drvdata(vmouse->idev, vmouse);
+
+	retval = input_register_device(vmouse->idev);
 	if (retval) {
 		printk(KERN_ERR "Failed to register device\n");
 		goto err_free_dev;
 	}
 
-	timer_setup(&mouse->timer, send_report, 0);
-	mod_timer(&mouse->timer, jiffies + msecs_to_jiffies(10));
+	/* setup and start timer */
+	timer_setup(&vmouse->timer, send_report, 0);
+	mod_timer(&vmouse->timer, jiffies + msecs_to_jiffies(vmouse->report_rate_ms));
 
-
-	return 0;
+	return 0; // s'all good
 
 err_free_dev:
-	input_free_device(mouse->idev);
-	kfree(mouse);
+	input_free_device(vmouse->idev);
 	return retval;
-
 }
 
 void cleanup_module(void)
 {
-	del_timer_sync(&mouse->timer);
+	if(!vmouse)
+		return;
 
-	if(!mouse) return;
-
-	input_unregister_device(mouse->idev);
-	kfree(mouse);
+	del_timer_sync(&vmouse->timer);
+	input_unregister_device(vmouse->idev);
 }
