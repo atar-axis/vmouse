@@ -43,9 +43,6 @@ static struct instance_data *vmouse;
 int register_client(void) { return -1; };
 int unregister_client(void) { return -1; };
 
-int vmouse_available;
-EXPORT_SYMBOL(vmouse_movement);
-
 void vmouse_movement(int x, int value)
 {
 	if (x) {
