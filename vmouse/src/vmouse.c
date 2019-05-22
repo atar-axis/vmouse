@@ -9,9 +9,8 @@
 #include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/init.h>
-#include <linux/delay.h>
 #include <linux/input.h>
-
+#include <linux/timer.h>
 
 MODULE_AUTHOR("Florian Dollinger");
 MODULE_DESCRIPTION("Mouse Emulation, designed to use in other modules");
@@ -27,6 +26,8 @@ struct instance_data {
 
 	int state_rel_x;
 	int state_rel_y;
+	int state_rel_wheel;
+
 	int state_btn_left;
 	int state_btn_right;
 	int state_btn_middle;
@@ -34,9 +35,16 @@ struct instance_data {
 	 // TODO:
 	int registered_clients;
 };
-static struct instance_data *vmouse;
 // TODO: currently global, not per instance
+static struct instance_data *vmouse;
 
+
+// TODO: implement
+int register_client(void) { return -1; };
+int unregister_client(void) { return -1; };
+
+int vmouse_available;
+EXPORT_SYMBOL(vmouse_movement);
 
 void vmouse_movement(int x, int value)
 {
@@ -47,6 +55,12 @@ void vmouse_movement(int x, int value)
 	}
 }
 EXPORT_SYMBOL(vmouse_movement);
+
+void vmouse_wheel(int value)
+{
+	vmouse->state_rel_wheel = value;
+}
+EXPORT_SYMBOL(vmouse_wheel);
 
 void vmouse_leftclick(int value)
 {
@@ -71,13 +85,16 @@ static void send_report(struct timer_list *t) {
 
 	input_report_rel(vmouse->idev, REL_X, vmouse->state_rel_x);
 	input_report_rel(vmouse->idev, REL_Y, vmouse->state_rel_y);
+	input_report_rel(vmouse->idev, REL_WHEEL, vmouse->state_rel_wheel);
+
 	input_report_key(vmouse->idev, BTN_LEFT, vmouse->state_btn_left);
 	input_report_key(vmouse->idev, BTN_RIGHT, vmouse->state_btn_right);
 	input_report_key(vmouse->idev, BTN_MIDDLE, vmouse->state_btn_middle);
+
 	input_sync(vmouse->idev);
 
+	/* restart timer */
 	mod_timer(&vmouse->timer, jiffies + msecs_to_jiffies(vmouse->report_rate_ms));
-
 }
 
 int init_module(void)
@@ -144,5 +161,9 @@ void cleanup_module(void)
 		return;
 
 	del_timer_sync(&vmouse->timer);
+
+	/* has to be the last operation since vmouse gets removed by the device
+	 * subsystem as soon as the input device is removed
+	 */
 	input_unregister_device(vmouse->idev);
 }
